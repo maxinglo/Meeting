@@ -66,6 +66,7 @@ class Server:
     async def handle_client_message(self, client_id, data):
         """处理来自客户端的消息。"""
         try:
+            print(f"收到来自客户端 {client_id} 的消息：{data}")
             message = json.loads(data)
             await self.route_message(client_id, message)
         except json.JSONDecodeError:

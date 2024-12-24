@@ -42,7 +42,9 @@ class MeetingManager:
             'meeting_id': meeting_id,
             'participants': self.meetings[meeting_id]['participants']
         })
-        # 通知其他参与者
+        # 通知其他参与者有新成员加入
+        await self.notify_existing_participants(meeting_id, new_client_id=client_id)
+        # 广播参与者更新
         await self.broadcast_participants(meeting_id)
 
     async def remove_participant(self, meeting_id, client_id):
@@ -56,6 +58,8 @@ class MeetingManager:
                     'type': 'left_meeting',
                     'meeting_id': meeting_id
                 })
+            # 通知其他参与者有成员离开
+            await self.notify_existing_participants_left(meeting_id, leaving_client_id=client_id)
             # 通知其他参与者
             await self.broadcast_participants(meeting_id)
             # 如果会议没有参与者了，终止会议
@@ -135,3 +139,29 @@ class MeetingManager:
     def get_participants(self, meeting_id):
         """获取会议的参与者列表。"""
         return self.meetings.get(meeting_id, {}).get('participants', None)
+
+    async def notify_existing_participants(self, meeting_id, new_client_id):
+        """通知现有参与者有新客户端加入，以便他们可以建立连接。"""
+        participants = self.meetings[meeting_id]['participants']
+        new_client_info = {
+            'client_id': new_client_id,
+            'nickname': participants[new_client_id]
+        }
+        for client_id in participants:
+            if client_id != new_client_id and client_id in self.server.clients:
+                await self.server.send_client_data(client_id, {
+                    'type': 'new_participant',
+                    'client_id': new_client_id,
+                    'nickname': participants[new_client_id]
+                })
+
+
+    async def notify_existing_participants_left(self, meeting_id, leaving_client_id):
+        """通知现有参与者有客户端离开，以便他们可以关闭连接。"""
+        participants = self.meetings[meeting_id]['participants']
+        for client_id in participants:
+            if client_id in self.server.clients:
+                await self.server.send_client_data(client_id, {
+                    'type': 'participant_left',
+                    'client_id': leaving_client_id
+                })

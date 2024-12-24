@@ -41,17 +41,24 @@ const VideoGallery = () => {
   const localVideoRef = useRef(null);
 
   useEffect(() => {
-    if (localVideoRef.current && localStream instanceof MediaStream) {
-      localVideoRef.current.srcObject = localStream;
+    if (localVideoRef.current) {
+      if (localStream instanceof MediaStream) {
+        localVideoRef.current.srcObject = localStream;
+        console.log('本地视频流已绑定到 video 元素:', localStream);
+      } else {
+        console.warn('本地流未准备好或不是 MediaStream 类型。');
+        // 如果无法获取本地流，显示错误或占位符
+        localVideoRef.current.srcObject = null;
+      }
     } else {
-      console.warn('本地流未准备好或不是 MediaStream 类型。');
+      console.error('localVideoRef.current 未定义，无法绑定本地视频流。');
     }
   }, [localStream]);
 
   return (
-    <div className={classes.videoGallery}>
+    <div className={classes.videoGallery} style={{ backgroundColor: 'white' }}>
       {/* 本地视频 */}
-      {localStream && (
+      {localStream ? (
         <div className={classes.videoContainer}>
           <video
             ref={localVideoRef}
@@ -59,10 +66,16 @@ const VideoGallery = () => {
             muted
             playsInline
             className={classes.videoElement}
+            style={{ backgroundColor: 'black' }}
           ></video>
           <div className={classes.label}>{nickname} (本地)</div>
         </div>
+      ) : (
+        <div className={classes.videoContainer}>
+          <div className={classes.label}>本地视频不可用</div>
+        </div>
       )}
+
       {/* 远程视频 */}
       {Object.entries(remoteStreams.current).map(([peer_id, stream]) => {
         const peerName = participants[peer_id] || '远程用户';

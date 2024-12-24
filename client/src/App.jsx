@@ -84,6 +84,7 @@ const App = () => {
   const peerConnections = useRef({}); // peer_id: RTCPeerConnection
   const localStream = useRef(null); // 本地媒体流
   const remoteStreams = useRef({}); // peer_id: MediaStream
+  const [clientId, setClientId] = useState(null); // 新增用于存储自己的 client_id
 
   // Toast 控制器
   const toasterId = useId('toaster');
@@ -103,6 +104,11 @@ const App = () => {
       const message = JSON.parse(event.data);
       console.log('收到服务器消息:', message);
 
+      if (message.type === 'client_id') {
+        setClientId(message.client_id);
+        return;
+      }
+
       if (message.type === 'text_message') {
         setMessages((prevMessages) => [...prevMessages, message]);
       } else if (message.type === 'meeting_created') {
@@ -120,7 +126,7 @@ const App = () => {
                   meeting_id: message.meeting_id,
                 });
                 dismissToast(toastId);
-              }}>加入会议</Link>
+              }}>入会议</Link>
               <Link onClick={() => {dismissToast(toastId);}}>稍后加入</Link>
             </ToastFooter>
           </Toast>,
@@ -328,12 +334,14 @@ const App = () => {
         stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
       }
       localStream.current = stream;
+
       // 更新所有现有 peer connections
       for (const peer_id in peerConnections.current) {
         stream.getTracks().forEach(track => {
           peerConnections.current[peer_id].addTrack(track, stream);
         });
       }
+
       // 触发重新渲染
       setParticipants(prev => ({ ...prev }));
     } catch (error) {
@@ -366,6 +374,57 @@ const App = () => {
       setParticipants(prev => ({ ...prev }));
     }
   };
+
+  // 在 useEffect 中监听 participants 的变化，建立与新参与者的连接
+  useEffect(() => {
+    if (!meetingId || !clientId) return; // 如果未加入会议或未获取 clientId，则不处理
+
+    const existingPeerIds = Object.keys(peerConnections.current);
+    const currentPeerIds = Object.keys(participants);
+
+    // 找出新增的 peer_id
+    const newPeerIds = currentPeerIds.filter(id => !existingPeerIds.includes(id.toString()) && id.toString() !== clientId.toString());
+
+    newPeerIds.forEach(peer_id => {
+      // 创建 RTCPeerConnection 并发起 WebRTC 协商
+      const peerConnection = createPeerConnection(peer_id);
+
+      // 创建 offer
+      peerConnection.createOffer()
+        .then(offer => peerConnection.setLocalDescription(offer))
+        .then(() => {
+          sendMessage({
+            type: 'webrtc_offer',
+            target_id: peer_id,
+            offer: peerConnection.localDescription,
+          });
+        })
+        .catch(error => {
+          console.error('创建或设置本地描述时出错:', error);
+        });
+    });
+
+    // 处理离开的参与者
+    const departedPeerIds = existingPeerIds.filter(id => !currentPeerIds.includes(id.toString()));
+    departedPeerIds.forEach(peer_id => {
+      if (peerConnections.current[peer_id]) {
+        peerConnections.current[peer_id].close();
+        delete peerConnections.current[peer_id];
+        delete remoteStreams.current[peer_id];
+      }
+    });
+
+  }, [participants, meetingId, clientId]);
+
+  // 确保本地视频流在UI中始终可见
+  useEffect(() => {
+    if (localStream.current) {
+      const videoElement = document.getElementById('localVideo');
+      if (videoElement) {
+        videoElement.srcObject = localStream.current;
+      }
+    }
+  }, [localStream.current]);
 
   return (
     <FluentProvider theme={teamsLightTheme}>
